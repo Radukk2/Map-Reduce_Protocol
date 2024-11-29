@@ -3,3 +3,4 @@ build:
 
 clean:
 		rm -f tema1
+		# rm ?.txt

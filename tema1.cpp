@@ -13,7 +13,7 @@ using namespace std;
 
 struct Payload {
     pthread_barrier_t *barrier, *reducer_barrier;
-    pthread_mutex_t *mutex;
+    pthread_mutex_t *mutex, *mutex_1;
     int id, num_threads_mapper, num_threads_reducer, type;
     vector<vector<pair<string,int>>> *all_words;
     queue<pair<string,int>> *q;
@@ -45,17 +45,17 @@ void* thread_function(void* arg) {
             while (file >> word) {
                 string str;
                 for (char ch : word) {
-                    if (ch != ',' and ch != '.')
+                    if (isalpha(ch))
                         str += tolower(ch);
                 }
                 local_data.insert({str,file_num});
             }
             file.close();
-            pthread_mutex_lock(payload.mutex);
+            pthread_mutex_lock(payload.mutex_1);
             vector<pair<string,int>> v1;
             v1.insert(v1.end(), local_data.begin(), local_data.end());
             payload.all_words->push_back(v1);
-            pthread_mutex_unlock(payload.mutex);
+            pthread_mutex_unlock(payload.mutex_1);
             local_data.clear();
             v1.clear();
         }
@@ -76,20 +76,22 @@ void* thread_function(void* arg) {
                 localMap[pair.first].push_back(pair.second);
             }
         }
-        pthread_mutex_lock(payload.mutex);
+        pthread_mutex_lock(payload.mutex_1);
         for (const auto &[key, val] : localMap) {
             (*payload.myMap)[key].insert((*payload.myMap)[key].end(), val.begin(), val.end());
         }
         N = 26;
         start = ID * (double)N / P;
         end = min(static_cast<size_t>((ID + 1) * (double)N / P), N);
-        pthread_mutex_unlock(payload.mutex);
+        pthread_mutex_unlock(payload.mutex_1);
         pthread_barrier_wait(payload.reducer_barrier);
         for (int i = start; i < end; i++) {
             vector<pair<string,vector<int>>> a;
             for (const auto &it : *payload.myMap) {
                 if (it.first[0] == (char) i + 'a') {
-                    a.push_back({it.first, it.second});
+                    vector<int> sortedVector = it.second;
+                    sort(sortedVector.begin(), sortedVector.end());
+                    a.push_back({it.first, sortedVector});
                 }
             }
             payload.thread_vector.push_back(a);
@@ -97,11 +99,11 @@ void* thread_function(void* arg) {
         for (size_t i = 0; i < payload.thread_vector.size(); i++) {
             auto &it = payload.thread_vector[i];
             sort(it.begin(), it.end(), [](pair<string,vector<int>> a, pair<string,vector<int>>b) {
-                return a.second.size() < b.second.size();
+                return a.second.size() > b.second.size();
             });
             ofstream fout(string(1, static_cast<char>(i + start +'a')) + ".txt");
             for (size_t j = 0; j < it.size(); j++) {
-                fout << it[j].first << ": [";
+                fout << it[j].first << ":[";
                 for (size_t  k= 0; k < it[j].second.size() - 1; k++) {
 
                     fout << it[j].second[k] << " ";
@@ -139,8 +141,9 @@ int main(int argc, char* argv[]) {
 
     //initialize synchronization details
     pthread_barrier_t barrier, reducer_barrier;
-    pthread_mutex_t mutex;
+    pthread_mutex_t mutex, mutex_1;
     pthread_mutex_init(&mutex, nullptr);
+    pthread_mutex_init(&mutex_1, nullptr);
     pthread_barrier_init(&barrier, nullptr, num_threads);
     pthread_barrier_init(&reducer_barrier, nullptr, num_threads_reducer);
     pthread_t threads[num_threads];
@@ -156,7 +159,7 @@ int main(int argc, char* argv[]) {
         } else {
             type = 1;
         }
-        payloads[id] = Payload{&barrier, &reducer_barrier, &mutex, id - (type == 1 ? num_threads_mapper : 0), num_threads_mapper , num_threads_reducer, type, &all_words, &q, &myMap, thread_vector};
+        payloads[id] = Payload{&barrier, &reducer_barrier, &mutex, &mutex_1, id - (type == 1 ? num_threads_mapper : 0), num_threads_mapper , num_threads_reducer, type, &all_words, &q, &myMap, thread_vector};
         r = pthread_create(&threads[id], NULL, thread_function, &payloads[id]);
         if (r) {
             cerr << "Error in thread creation\n";
@@ -171,6 +174,7 @@ int main(int argc, char* argv[]) {
     pthread_barrier_destroy(&barrier);
     pthread_barrier_destroy(&reducer_barrier);
     pthread_mutex_destroy(&mutex);
+    pthread_mutex_destroy(&mutex_1);
     file.close();
     return 0;
 }
