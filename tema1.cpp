@@ -7,20 +7,27 @@
 #include <queue>
 #include <set>
 #include<map>
+#include <filesystem>
 
 using namespace std;
 
+
+struct CompareFiles {
+    bool operator()(pair<string,int> a, pair<string,int> b) {
+        return filesystem::file_size(a.first) < filesystem::file_size(b.first);
+    }
+};
 
 struct Payload {
     pthread_barrier_t *barrier, *reducer_barrier;
     pthread_mutex_t *mutex, *mutex_1;
     int id, num_threads_mapper, num_threads_reducer, type;
     vector<vector<pair<string,int>>> *all_words;
-    queue<pair<string,int>> *q;
+    priority_queue<pair<string, int>, vector<pair<string, int>>, CompareFiles> *q;
     map<string,vector<int>> *myMap;
-    // map<char, vector<pair<string,vector<int>>>> thread_map; 
     vector<vector<pair<string,vector<int>>>> thread_vector;
 };
+
 
 void* thread_function(void* arg) {
     Payload payload = *static_cast<Payload*>(arg);
@@ -32,8 +39,8 @@ void* thread_function(void* arg) {
             int file_num;
             if (!payload.q->empty()) {
 
-            filename = payload.q->front().first;
-            file_num = payload.q->front().second;
+            filename = payload.q->top().first;
+            file_num = payload.q->top().second;
             payload.q->pop();
             } else {
                 pthread_mutex_unlock(payload.mutex);
@@ -99,7 +106,11 @@ void* thread_function(void* arg) {
         for (size_t i = 0; i < payload.thread_vector.size(); i++) {
             auto &it = payload.thread_vector[i];
             sort(it.begin(), it.end(), [](pair<string,vector<int>> a, pair<string,vector<int>>b) {
-                return a.second.size() > b.second.size();
+                if (a.second.size() != b.second.size()) {
+                    return a.second.size() > b.second.size();
+                } else {
+                    return a.first < b.first;
+                }
             });
             ofstream fout(string(1, static_cast<char>(i + start +'a')) + ".txt");
             for (size_t j = 0; j < it.size(); j++) {
@@ -131,12 +142,14 @@ int main(int argc, char* argv[]) {
     }
     getline(file, line);
     // vector<string> files;
-    queue<pair<string,int>> q;
+    priority_queue<pair<string, int>, vector<pair<string, int>>, CompareFiles> q;
     int i = 1;
     while (getline(file, line)) {
+        // cout << filesystem::file_size(line) <<  "\n";
         q.push({line, i});
         i++;
     }
+    // cout << q.size();
     file.close();
 
     //initialize synchronization details
