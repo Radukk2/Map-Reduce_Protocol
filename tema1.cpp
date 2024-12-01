@@ -58,9 +58,9 @@ void* thread_function(void* arg) {
                 local_data.insert({str,file_num});
             }
             file.close();
-            pthread_mutex_lock(payload.mutex_1);
             vector<pair<string,int>> v1;
             v1.insert(v1.end(), local_data.begin(), local_data.end());
+            pthread_mutex_lock(payload.mutex_1);
             payload.all_words->push_back(v1);
             pthread_mutex_unlock(payload.mutex_1);
             local_data.clear();
@@ -70,13 +70,11 @@ void* thread_function(void* arg) {
     } 
     if (payload.type == 1) {
         pthread_barrier_wait(payload.barrier);
-        pthread_mutex_lock(payload.mutex);
         int P = payload.num_threads_reducer;
         int ID = payload.id;
         size_t N = payload.all_words->size();
         int start = ID * (double)N / P;
         int end = min(static_cast<size_t>((ID + 1) * (double)N / P), N);
-        pthread_mutex_unlock(payload.mutex);
         map<string, vector<int>> localMap;
         for (int i = start; i < end; i++) {
             for (const auto &pair : payload.all_words->at(i)) {
@@ -87,10 +85,10 @@ void* thread_function(void* arg) {
         for (const auto &[key, val] : localMap) {
             (*payload.myMap)[key].insert((*payload.myMap)[key].end(), val.begin(), val.end());
         }
+        pthread_mutex_unlock(payload.mutex_1);
         N = 26;
         start = ID * (double)N / P;
         end = min(static_cast<size_t>((ID + 1) * (double)N / P), N);
-        pthread_mutex_unlock(payload.mutex_1);
         pthread_barrier_wait(payload.reducer_barrier);
         for (int i = start; i < end; i++) {
             vector<pair<string,vector<int>>> a;
@@ -145,11 +143,9 @@ int main(int argc, char* argv[]) {
     priority_queue<pair<string, int>, vector<pair<string, int>>, CompareFiles> q;
     int i = 1;
     while (getline(file, line)) {
-        // cout << filesystem::file_size(line) <<  "\n";
         q.push({line, i});
         i++;
     }
-    // cout << q.size();
     file.close();
 
     //initialize synchronization details
